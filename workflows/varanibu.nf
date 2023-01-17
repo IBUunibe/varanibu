@@ -28,6 +28,7 @@ ch_multiqc_custom_config   = params.multiqc_config ? Channel.fromPath( params.mu
 ch_multiqc_logo            = params.multiqc_logo   ? Channel.fromPath( params.multiqc_logo, checkIfExists: true ) : Channel.empty()
 ch_multiqc_custom_methods_description = params.multiqc_methods_description ? file(params.multiqc_methods_description, checkIfExists: true) : file("$projectDir/assets/methods_description_template.yml", checkIfExists: true)
 
+ch_adapter_seqs            = Channel.fromPath("$projectDir/assets/adapters.fa", checkIfExists: true)
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     IMPORT LOCAL MODULES/SUBWORKFLOWS
@@ -87,6 +88,18 @@ workflow VARANIBU {
     )
 
     //
+    // MODULE: run fastp
+    //
+    FASTP (
+        INPUT_CHECK.out.reads,
+        ch_adapter_seqs.collect(),
+        [],
+        []
+        // save_trimmed_fail,
+        // save_merged
+    )
+
+    //
     // MODULE: MultiQC
     //
     workflow_summary    = WorkflowVaranibu.paramsSummaryMultiqc(workflow, summary_params)
@@ -100,6 +113,7 @@ workflow VARANIBU {
     ch_multiqc_files = ch_multiqc_files.mix(ch_methods_description.collectFile(name: 'methods_description_mqc.yaml'))
     ch_multiqc_files = ch_multiqc_files.mix(CUSTOM_DUMPSOFTWAREVERSIONS.out.mqc_yml.collect())
     ch_multiqc_files = ch_multiqc_files.mix(FASTQC.out.zip.collect{it[1]}.ifEmpty([]))
+    ch_multiqc_files = ch_multiqc_files.mix(FASTP.out.json.collect{it[1]}.ifEmpty([]))
 
     MULTIQC (
         ch_multiqc_files.collect(),
