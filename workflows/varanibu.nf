@@ -35,7 +35,7 @@ ch_adapter_seqs            = Channel.fromPath("$projectDir/assets/adapters.fa", 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-include { FASTA_CHECK } from '../modules/local/fasta_check'
+include { FASTA_CHECK           } from '../modules/local/fasta_check'
 
 //
 // SUBWORKFLOW: Consisting of a mix of local and nf-core/modules
@@ -57,6 +57,7 @@ include { CUSTOM_DUMPSOFTWAREVERSIONS } from '../modules/nf-core/custom/dumpsoft
 include { FASTP                       } from '../modules/nf-core/fastp/main'
 include { BWA_INDEX                   } from '../modules/nf-core/bwa/index/main'  
 include { BWA_MEM                     } from '../modules/nf-core/bwa/mem/main'
+include { PICARD_MERGESAMFILES        } from '../modules/nf-core/picard/mergesamfiles/main' 
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -104,13 +105,20 @@ workflow VARANIBU {
 
     ch_versions = ch_versions.mix(BWA_INDEX.out.versions.first())
 
-    FASTP.out.reads.view()
     BWA_MEM (
         FASTP.out.reads,
         BWA_INDEX.out.index,
         true
     )
     ch_versions = ch_versions.mix(BWA_MEM.out.versions.first())
+
+    PICARD_MERGESAMFILES(
+        BWA_MEM.out.bam.map{ meta, bam -> 
+            new_meta = [:]
+            new_meta.id = 'merged'
+            [new_meta, bam]}.groupTuple()
+    )
+    ch_versions = ch_versions.mix(PICARD_MERGESAMFILES.out.versions.first())
 
     CUSTOM_DUMPSOFTWAREVERSIONS (
         ch_versions.unique().collectFile(name: 'collated_versions.yml')
