@@ -17,6 +17,7 @@ for (param in checkPathParamList) { if (param) { file(param, checkIfExists: true
 // Check mandatory parameters
 if (params.input) { ch_input = file(params.input) } else { exit 1, 'Input samplesheet not specified!' }
 if (params.fasta) { ch_fasta = file(params.fasta) }
+if (params.vcf)   { ch_vcf   = file(params.vcf) }
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     CONFIG FILES
@@ -57,7 +58,13 @@ include { CUSTOM_DUMPSOFTWAREVERSIONS } from '../modules/nf-core/custom/dumpsoft
 include { FASTP                       } from '../modules/nf-core/fastp/main'
 include { BWA_INDEX                   } from '../modules/nf-core/bwa/index/main'  
 include { BWA_MEM                     } from '../modules/nf-core/bwa/mem/main'
-include { PICARD_MERGESAMFILES        } from '../modules/nf-core/picard/mergesamfiles/main' 
+include { GATK4_MARKDUPLICATES        } from '../modules/nf-core/gatk4/markduplicates/main'  
+include { SAMTOOLS_FAIDX              } from '../modules/nf-core/samtools/faidx/main' 
+include { SAMTOOLS_INDEX              } from '../modules/nf-core/samtools/index/main' 
+include { GATK4_CREATESEQUENCEDICTIONARY } from '../modules/nf-core/gatk4/createsequencedictionary/main' 
+include { GATK4_BASERECALIBRATOR      } from '../modules/nf-core/gatk4/baserecalibrator/main'
+include { GATK4_INDEXFEATUREFILE      } from '../modules/nf-core/gatk4/indexfeaturefile/main'
+// include { PICARD_MERGESAMFILES        } from '../modules/nf-core/picard/mergesamfiles/main' 
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -101,7 +108,23 @@ workflow VARANIBU {
 
     FASTA_CHECK (
         ch_fasta
-    ) | BWA_INDEX
+    )
+
+    SAMTOOLS_FAIDX (
+        FASTA_CHECK.out.fasta
+    )
+
+    GATK4_CREATESEQUENCEDICTIONARY (
+        ch_fasta
+    )
+
+    GATK4_INDEXFEATUREFILE (
+        ch_vcf.map { vcf -> tuple ([id: 'vcf'], vcf)}
+    )
+    
+    BWA_INDEX (
+        FASTA_CHECK.out.fasta
+    )
 
     ch_versions = ch_versions.mix(BWA_INDEX.out.versions.first())
 
@@ -112,13 +135,33 @@ workflow VARANIBU {
     )
     ch_versions = ch_versions.mix(BWA_MEM.out.versions.first())
 
-    PICARD_MERGESAMFILES(
-        BWA_MEM.out.bam.map{ meta, bam -> 
-            new_meta = [:]
-            new_meta.id = 'merged'
-            [new_meta, bam]}.groupTuple()
+    SAMTOOLS_INDEX (
+        BWA_MEM.out.bam
     )
-    ch_versions = ch_versions.mix(PICARD_MERGESAMFILES.out.versions.first())
+
+    GATK4_MARKDUPLICATES (
+        BWA_MEM.out.bam,
+        FASTA_CHECK.out.fasta.map { meta, fasta -> fasta },
+        SAMTOOLS_FAIDX.out.fai.map { meta, fai -> fai }
+    )
+
+    BWA_MEM.out.bam.mix(SAMTOOLS_INDEX.out.bai).groupTuple().view()
+
+    GATK4_BASERECALIBRATOR (
+        BWA_MEM.out.bam.mix(SAMTOOLS_INDEX.out.bai).groupTuple(),
+        ch_fasta,
+        SAMTOOLS_FAIDX.out.fai.map { meta, fai -> fai },
+        GATK4_CREATESEQUENCEDICTIONARY.out.dict,
+
+    )
+
+    // PICARD_MERGESAMFILES(
+    //     BWA_MEM.out.bam.map{ meta, bam -> 
+    //         new_meta = [:]
+    //         new_meta.id = 'merged'
+    //         [new_meta, bam]}.groupTuple()
+    // )
+    // ch_versions = ch_versions.mix(PICARD_MERGESAMFILES.out.versions.first())
 
     CUSTOM_DUMPSOFTWAREVERSIONS (
         ch_versions.unique().collectFile(name: 'collated_versions.yml')

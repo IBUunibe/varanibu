@@ -3,7 +3,7 @@ process FASTA_CHECK {
     path fasta
 
     output:
-    tuple val('genome'), path('genome_checked.fa')
+    tuple val('genome'), path('genome_checked.fa'), emit: fasta
 
     script:
     """
