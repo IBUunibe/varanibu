@@ -8,4 +8,4 @@ testing*
 *.pyc
 ._.DS_Store
 null/
-testrun/
+testrun*/

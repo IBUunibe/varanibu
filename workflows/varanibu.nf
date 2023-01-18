@@ -16,7 +16,7 @@ for (param in checkPathParamList) { if (param) { file(param, checkIfExists: true
 
 // Check mandatory parameters
 if (params.input) { ch_input = file(params.input) } else { exit 1, 'Input samplesheet not specified!' }
-
+if (params.fasta) { ch_fasta = file(params.fasta) }
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     CONFIG FILES
@@ -34,6 +34,8 @@ ch_adapter_seqs            = Channel.fromPath("$projectDir/assets/adapters.fa", 
     IMPORT LOCAL MODULES/SUBWORKFLOWS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
+
+include { FASTA_CHECK } from '../modules/local/fasta_check'
 
 //
 // SUBWORKFLOW: Consisting of a mix of local and nf-core/modules
@@ -53,6 +55,8 @@ include { FASTQC                      } from '../modules/nf-core/fastqc/main'
 include { MULTIQC                     } from '../modules/nf-core/multiqc/main'
 include { CUSTOM_DUMPSOFTWAREVERSIONS } from '../modules/nf-core/custom/dumpsoftwareversions/main'
 include { FASTP                       } from '../modules/nf-core/fastp/main'
+include { BWA_INDEX                   } from '../modules/nf-core/bwa/index/main'  
+include { BWA_MEM                     } from '../modules/nf-core/bwa/mem/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -83,10 +87,6 @@ workflow VARANIBU {
     )
     ch_versions = ch_versions.mix(FASTQC.out.versions.first())
 
-    CUSTOM_DUMPSOFTWAREVERSIONS (
-        ch_versions.unique().collectFile(name: 'collated_versions.yml')
-    )
-
     //
     // MODULE: run fastp
     //
@@ -95,8 +95,25 @@ workflow VARANIBU {
         ch_adapter_seqs.collect(),
         [],
         []
-        // save_trimmed_fail,
-        // save_merged
+    )
+    ch_versions = ch_versions.mix(FASTP.out.versions.first())
+
+    FASTA_CHECK (
+        ch_fasta
+    ) | BWA_INDEX
+
+    ch_versions = ch_versions.mix(BWA_INDEX.out.versions.first())
+
+    FASTP.out.reads.view()
+    BWA_MEM (
+        FASTP.out.reads,
+        BWA_INDEX.out.index,
+        true
+    )
+    ch_versions = ch_versions.mix(BWA_MEM.out.versions.first())
+
+    CUSTOM_DUMPSOFTWAREVERSIONS (
+        ch_versions.unique().collectFile(name: 'collated_versions.yml')
     )
 
     //
