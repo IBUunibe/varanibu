@@ -17,7 +17,7 @@ for (param in checkPathParamList) { if (param) { file(param, checkIfExists: true
 // Check mandatory parameters
 if (params.input) { ch_input = file(params.input) } else { exit 1, 'Input samplesheet not specified!' }
 if (params.fasta) { ch_fasta = file(params.fasta) }
-if (params.vcf)   { ch_vcf   = file(params.vcf) }
+if (params.vcf)   { ch_vcf   = Channel.fromPath(params.vcf) }
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     CONFIG FILES
@@ -119,7 +119,7 @@ workflow VARANIBU {
     )
 
     GATK4_INDEXFEATUREFILE (
-        ch_vcf.map { vcf -> tuple ([id: 'vcf'], vcf)}
+        ch_vcf.map { vcf -> tuple ['id' : 'vcf'], vcf}
     )
     
     BWA_INDEX (
@@ -145,14 +145,27 @@ workflow VARANIBU {
         SAMTOOLS_FAIDX.out.fai.map { meta, fai -> fai }
     )
 
-    BWA_MEM.out.bam.mix(SAMTOOLS_INDEX.out.bai).groupTuple().view()
+    // ch_vcf.collect().view()
+    // GATK4_INDEXFEATUREFILE.out.index.collect().view()
+    // println ch_fasta
+    // SAMTOOLS_FAIDX.out.fai.map { meta, fai -> fai }.view()
+    //  GATK4_CREATESEQUENCEDICTIONARY.out.dict.view()
+    BWA_MEM.out.bam
+        .mix(SAMTOOLS_INDEX.out.bai)
+        .groupTuple()
+        .map {  meta, bambai -> 
+                tuple meta, bambai[0], bambai[1]} 
+        .set { ch_bam_indexed }
+
+    ch_bam_indexed.view()
 
     GATK4_BASERECALIBRATOR (
-        BWA_MEM.out.bam.mix(SAMTOOLS_INDEX.out.bai).groupTuple(),
+        ch_bam_indexed,
         ch_fasta,
         SAMTOOLS_FAIDX.out.fai.map { meta, fai -> fai },
         GATK4_CREATESEQUENCEDICTIONARY.out.dict,
-
+        ch_vcf.collect(),
+        GATK4_INDEXFEATUREFILE.out.index.collect()
     )
 
     // PICARD_MERGESAMFILES(
